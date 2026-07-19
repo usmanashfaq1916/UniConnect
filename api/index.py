@@ -550,11 +550,21 @@ Write a compelling, personalized {request.type.replace('_', ' ')}."""
 
 RESUME_SYSTEM_PROMPT = """You are UniConnect AI's Resume Builder. Help students create ATS-friendly resumes for university applications and internships.
 
-For each resume, provide:
-1. A professional summary (2-3 sentences)
-2. Suggested skills to add (relevant to their target role)
-3. Improved project descriptions (2-3 bullet points each)
-4. Actionable tips to strengthen their resume
+For each resume, provide all sections below. Use the exact markers shown.
+
+Start each section with the marker on its own line:
+
+[SUMMARY]
+Write a professional summary (2-3 sentences).
+
+[SKILLS]
+List suggested skills as a comma-separated list (relevant to their target role).
+
+[PROJECTS]
+Write 2-3 improved project descriptions, each on a new line starting with "- ".
+
+[IMPROVEMENTS]
+Write 2-3 actionable tips to strengthen their resume.
 
 Be specific and practical. Focus on Pakistani education and job market context."""
 
@@ -583,20 +593,60 @@ Projects: {request.projects}
 Experience: {request.experience}
 Target Role: {request.targetRole}
 
-Provide:
-1. Professional summary
-2. Suggested skills to add
-3. Improved project descriptions"""
+Provide all sections with the exact markers as instructed."""
         reply = await get_chat_response(
             messages=[{"role": "user", "content": user_message}],
             system_prompt=RESUME_SYSTEM_PROMPT,
             temperature=0.7,
             max_tokens=2048,
         )
+
+        summary = ""
+        skills_list: list[str] = []
+        projects_list: list[str] = []
+
+        current_section = None
+        for line in reply.split("\n"):
+            stripped = line.strip()
+            if stripped == "[SUMMARY]":
+                current_section = "summary"
+                continue
+            elif stripped == "[SKILLS]":
+                current_section = "skills"
+                continue
+            elif stripped == "[PROJECTS]":
+                current_section = "projects"
+                continue
+            elif stripped == "[IMPROVEMENTS]":
+                current_section = None
+                continue
+
+            if current_section == "summary":
+                if stripped:
+                    summary = (summary + " " + stripped).strip()
+            elif current_section == "skills":
+                if stripped:
+                    for s in stripped.split(","):
+                        s_clean = s.strip().strip("-").strip()
+                        if s_clean:
+                            skills_list.append(s_clean)
+            elif current_section == "projects":
+                if stripped:
+                    cleaned = stripped.lstrip("- ").strip()
+                    if cleaned:
+                        projects_list.append(cleaned)
+
+        if not summary:
+            summary = reply.split("\n")[0] if reply else "Professional summary based on your profile."
+        if not skills_list:
+            skills_list = ["Communication", "Teamwork", "Problem Solving"]
+        if not projects_list:
+            projects_list = [reply]
+
         return ResumeGenerateResponse(
-            summary="AI-generated professional summary based on your profile.",
-            suggestedSkills=["Communication", "Teamwork", "Problem Solving"],
-            projectDescriptions=[reply],
+            summary=summary,
+            suggestedSkills=skills_list,
+            projectDescriptions=projects_list,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
